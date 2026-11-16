@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Interval Timer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#e9eef3;--ink:#1f2a44;--field:#fff;--line:#c3ccd8;
+  --work:#2457f5;--rest:#bfeee0;--rest-ink:#0f3d33;--done:#1f2a44;
+  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){--bg:#161c2b;--ink:#e8edf5;--field:#202843;--line:#3a4466;--done:#e8edf5}
+}
+:root[data-theme="dark"]{--bg:#161c2b;--ink:#e8edf5;--field:#202843;--line:#3a4466;--done:#e8edf5}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font-family:"Bricolage Grotesque",system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--ink);transition:background .3s,color .3s;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:16px}
+body.work{background:var(--work);color:#fff}
+body.rest{background:var(--rest);color:var(--rest-ink)}
+body.ready{background:var(--line);color:var(--ink)}
+body.done{background:var(--done);color:var(--bg)}
+#label{font-size:1.6rem;font-weight:700;margin:0}
+#time{font-size:min(34vw,9rem);font-weight:800;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.03em}
+#round{font-size:1.1rem;font-weight:500;height:1.4em}
+#settings{display:flex;gap:10px}
+#settings label{display:flex;flex-direction:column;gap:4px;font-size:.85rem;font-weight:500}
+#settings input{width:88px;font:inherit;font-size:1.1rem;font-weight:700;padding:8px;border:2px solid var(--line);border-radius:8px;background:var(--field);color:var(--ink)}
+body.running #settings{display:none}
+#btns{display:flex;gap:10px}
+button{font:inherit;font-weight:700;font-size:1.05rem;padding:12px 26px;border-radius:10px;border:2px solid currentColor;background:none;color:inherit;cursor:pointer}
+#go{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+body.work #go,body.rest #go,body.ready #go,body.done #go{background:currentColor}
+body.work #go span{color:var(--work)}body.rest #go span{color:var(--rest)}body.ready #go span{color:var(--line)}body.done #go span{color:var(--done)}
+@media (prefers-reduced-motion:reduce){body{transition:none}}
+</style>
+</head>
+<body>
+<p id="label">Set your intervals</p>
+<div id="time">0:20</div>
+<div id="round"></div>
+<div id="settings">
+  <label>Work (sec)<input id="wk" type="number" min="5" value="20"></label>
+  <label>Rest (sec)<input id="rs" type="number" min="0" value="10"></label>
+  <label>Rounds<input id="rd" type="number" min="1" value="8"></label>
+</div>
+<div id="btns"><button id="go"><span id="gotxt">Start</span></button><button id="reset">Reset</button></div>
+<script>
+const $=id=>document.getElementById(id);
+let phases=[],idx=0,endAt=0,left=0,timer=null,running=false,ac=null;
+
+function beep(f=880,d=.12){
+  try{ac=ac||new (window.AudioContext||window.webkitAudioContext)();
+    const o=ac.createOscillator(),g=ac.createGain();
+    o.frequency.value=f;g.gain.value=.15;o.connect(g);g.connect(ac.destination);
+    o.start();o.stop(ac.currentTime+d)}catch(e){}
+}
+function fmt(ms){const s=Math.ceil(ms/1000);return Math.floor(s/60)+":"+String(s%60).padStart(2,"0")}
+function build(){
+  const w=+$("wk").value||20,r=+$("rs").value||0,n=+$("rd").value||1;
+  phases=[{t:"ready",d:5000,n:0}];
+  for(let i=1;i<=n;i++){
+    phases.push({t:"work",d:w*1000,n:i});
+    if(r>0&&i<n)phases.push({t:"rest",d:r*1000,n:i});
+  }
+  phases.push({t:"done",d:0,n:n});
+}
+function show(p){
+  document.body.className=(running?"running ":"")+p.t;
+  const names={ready:"Get ready",work:"Work",rest:"Rest",done:"Workout done"};
+  $("label").textContent=names[p.t];
+  $("round").textContent=p.t==="work"||p.t==="rest"?"Round "+p.n+" of "+$("rd").value:"";
+  if(p.t==="done"){$("time").textContent="Nice work";$("round").textContent=$("rd").value+" rounds finished"}
+}
+function enter(i){
+  idx=i;const p=phases[idx];show(p);
+  if(p.t==="done"){stop(false);beep(660,.5);return}
+  left=p.d;endAt=Date.now()+left;
+  if(p.t!=="ready")beep(p.t==="work"?1000:600,.3);
+}
+function tick(){
+  if(!running)return;
+  const prev=Math.ceil(left/1000);
+  left=endAt-Date.now();
+  if(left<=0){enter(idx+1);if(!running)return;}
+  const cur=Math.ceil(left/1000);
+  if(cur!==prev&&cur<=3&&cur>0)beep(700,.08);
+  $("time").textContent=fmt(Math.max(left,0));
+}
+function stop(keepPhase){
+  running=false;clearInterval(timer);
+  document.body.classList.remove("running");
+  $("gotxt").textContent=keepPhase?"Resume":"Start";
+}
+function go(){
+  if(running){stop(true);return}
+  if(!phases.length||phases[idx].t==="done"){build();enter(0)}
+  else endAt=Date.now()+left;
+  running=true;document.body.classList.add("running");
+  $("gotxt").textContent="Pause";
+  timer=setInterval(tick,200);tick();
+}
+function reset(){
+  stop(false);phases=[];idx=0;
+  document.body.className="";
+  $("label").textContent="Set your intervals";
+  $("round").textContent="";
+  $("time").textContent=fmt((+$("wk").value||20)*1000);
+}
+$("go").onclick=go;$("reset").onclick=reset;
+$("wk").oninput=()=>{if(!running&&!phases.length)reset()};
+</script>
+</body>
+</html>
